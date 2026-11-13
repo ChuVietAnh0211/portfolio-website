@@ -3,9 +3,8 @@ import Application from '../Application';
 import Sizes from '../Utils/Sizes';
 import EventEmitter from '../Utils/EventEmitter';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import TWEEN from '@tweenjs/tween.js';
+import TWEEN, { Tween } from '@tweenjs/tween.js';
 import Renderer from '../Renderer';
-import Resources from '../Utils/Resources';
 import UIEventBus from '../UI/EventBus';
 import Time from '../Utils/Time';
 import BezierEasing from 'bezier-easing';
@@ -16,7 +15,21 @@ import {
     LoadingKeyframe,
     DeskKeyframe,
     OrbitControlsStart,
+    motionPreference,
 } from './CameraKeyframes';
+
+/** Longest camera transition allowed when the user prefers reduced motion. */
+const REDUCED_MOTION_MAX_TRANSITION_MS = 300;
+/** Mouse events within this window after a touch are treated as touch-generated. */
+const TOUCH_MOUSE_EMULATION_MS = 800;
+/** Elements whose default mousedown behaviour (focus, selection) must be kept. */
+const INTERACTIVE_SELECTOR =
+    'input, textarea, select, button, a[href], label, [contenteditable=""], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
+
+/** Camera frustum, derived from scene scale (desk ~ thousands of units, loading keyframe ~64k away). */
+const CAMERA_FOV = 35;
+const CAMERA_NEAR = 50;
+const CAMERA_FAR = 300000;
 
 export enum CameraKey {
     IDLE = 'idle',
@@ -30,8 +43,8 @@ export default class Camera extends EventEmitter {
     sizes: Sizes;
     scene: THREE.Scene;
     instance: THREE.PerspectiveCamera;
-    renderer: Renderer;
-    resources: Resources;
+    /** Set in createControls(), once the Renderer exists. */
+    renderer?: Renderer;
     time: Time;
 
     position: THREE.Vector3;
@@ -44,19 +57,27 @@ export default class Camera extends EventEmitter {
     targetKeyframe: CameraKey | undefined;
     keyframes: { [key in CameraKey]: CameraKeyframeInstance };
 
+    private activeTweens: Tween<THREE.Vector3>[];
+    private lastTouchTime: number;
+    private onTouchStart: () => void;
+    private onMouseDown: (event: MouseEvent) => void;
+    private onKeyDown: (event: KeyboardEvent) => void;
+    private onFreeCamToggle: (toggle: boolean) => void;
+    private onLoadingScreenDone: () => void;
+
     constructor() {
         super();
         this.application = new Application();
         this.sizes = this.application.sizes;
         this.scene = this.application.scene;
-        this.renderer = this.application.renderer;
-        this.resources = this.application.resources;
         this.time = this.application.time;
 
         this.position = new THREE.Vector3(0, 0, 0);
         this.focalPoint = new THREE.Vector3(0, 0, 0);
 
         this.freeCam = false;
+        this.activeTweens = [];
+        this.lastTouchTime = -Infinity;
 
         this.keyframes = {
             idle: new IdleKeyframe(),
@@ -66,39 +87,67 @@ export default class Camera extends EventEmitter {
             orbitControlsStart: new OrbitControlsStart(),
         };
 
-        document.addEventListener('mousedown', (event) => {
-            event.preventDefault();
-            // @ts-ignore
-            if (event.target.id === 'prevent-click') return;
-            // print target and current keyframe
-            if (
-                this.currentKeyframe === CameraKey.IDLE ||
-                this.targetKeyframe === CameraKey.IDLE
-            ) {
+        this.onTouchStart = () => {
+            this.lastTouchTime = performance.now();
+        };
+        document.addEventListener('touchstart', this.onTouchStart, {
+            passive: true,
+            capture: true,
+        });
+
+        this.onMouseDown = (event: MouseEvent) => {
+            const target = event.target instanceof Element ? event.target : null;
+            const touchGenerated =
+                performance.now() - this.lastTouchTime <
+                TOUCH_MOUSE_EMULATION_MS;
+            const interactive = !!target?.closest(INTERACTIVE_SELECTOR);
+            // Prevent text selection / focus stealing on the canvas only;
+            // keep native behaviour for touch and interactive UI elements.
+            if (!touchGenerated && !interactive) event.preventDefault();
+
+            if (target && target.id === 'prevent-click') return;
+            if (this.isAt(CameraKey.IDLE)) {
                 this.transition(CameraKey.DESK);
-            } else if (
-                this.currentKeyframe === CameraKey.DESK ||
-                this.targetKeyframe === CameraKey.DESK
-            ) {
+            } else if (this.isAt(CameraKey.DESK)) {
                 this.transition(CameraKey.IDLE);
             }
-        });
+        };
+        document.addEventListener('mousedown', this.onMouseDown);
 
         this.setPostLoadTransition();
         this.setInstance();
         this.setMonitorListeners();
         this.setFreeCamListeners();
+        this.setKeyboardListeners();
+    }
+
+    private isAt(key: CameraKey) {
+        return this.currentKeyframe === key || this.targetKeyframe === key;
+    }
+
+    private stopTweens() {
+        for (const tween of this.activeTweens) tween.stop();
+        this.activeTweens = [];
+    }
+
+    private setWebglPointerEvents(value: 'auto' | 'none') {
+        const webgl = document.getElementById('webgl');
+        if (webgl) webgl.style.pointerEvents = value;
     }
 
     transition(
         key: CameraKey,
         duration: number = 1000,
-        easing?: any,
+        easing?: (amount: number) => number,
         callback?: () => void
     ) {
         if (this.currentKeyframe === key) return;
 
-        if (this.targetKeyframe) TWEEN.removeAll();
+        this.stopTweens();
+
+        if (motionPreference.reduced) {
+            duration = Math.min(duration, REDUCED_MOTION_MAX_TRANSITION_MS);
+        }
 
         this.currentKeyframe = undefined;
         this.targetKeyframe = key;
@@ -109,6 +158,7 @@ export default class Camera extends EventEmitter {
             .to(keyframe.position, duration)
             .easing(easing || TWEEN.Easing.Quintic.InOut)
             .onComplete(() => {
+                this.activeTweens = [];
                 this.currentKeyframe = key;
                 this.targetKeyframe = undefined;
                 if (callback) callback();
@@ -118,16 +168,17 @@ export default class Camera extends EventEmitter {
             .to(keyframe.focalPoint, duration)
             .easing(easing || TWEEN.Easing.Quintic.InOut);
 
+        this.activeTweens = [posTween, focTween];
         posTween.start();
         focTween.start();
     }
 
     setInstance() {
         this.instance = new THREE.PerspectiveCamera(
-            35,
+            CAMERA_FOV,
             this.sizes.width / this.sizes.height,
-            10,
-            900000
+            CAMERA_NEAR,
+            CAMERA_FAR
         );
         this.currentKeyframe = CameraKey.LOADING;
 
@@ -150,8 +201,7 @@ export default class Camera extends EventEmitter {
     }
 
     setFreeCamListeners() {
-        UIEventBus.on('freeCamToggle', (toggle: boolean) => {
-            // if (toggle === this.freeCam) return;
+        this.onFreeCamToggle = (toggle: boolean) => {
             if (toggle) {
                 this.transition(
                     CameraKey.ORBIT_CONTROLS_START,
@@ -163,28 +213,58 @@ export default class Camera extends EventEmitter {
                         );
 
                         this.orbitControls.update();
+                        this.orbitControls.enabled = true;
                         this.freeCam = true;
                     }
                 );
-                // @ts-ignore
-                document.getElementById('webgl').style.pointerEvents = 'auto';
+                this.setWebglPointerEvents('auto');
             } else {
                 this.freeCam = false;
+                if (this.orbitControls) this.orbitControls.enabled = false;
                 this.transition(
                     CameraKey.IDLE,
                     4000,
                     TWEEN.Easing.Exponential.Out
                 );
-                // @ts-ignore
-                document.getElementById('webgl').style.pointerEvents = 'none';
+                this.setWebglPointerEvents('none');
             }
-        });
+        };
+        UIEventBus.on('freeCamToggle', this.onFreeCamToggle);
+    }
+
+    setKeyboardListeners() {
+        this.onKeyDown = (event: KeyboardEvent) => {
+            // Only native key presses on the page; keys forwarded from the
+            // monitor iframe arrive as CustomEvents and belong to the OS.
+            if (!(event instanceof KeyboardEvent)) return;
+            if (event.key !== 'Escape' || this.freeCam) return;
+
+            if (this.isAt(CameraKey.MONITOR)) {
+                this.trigger('leftMonitor');
+            } else if (this.isAt(CameraKey.DESK)) {
+                this.transition(CameraKey.IDLE);
+            }
+        };
+        document.addEventListener('keydown', this.onKeyDown);
+    }
+
+    dispose() {
+        document.removeEventListener('touchstart', this.onTouchStart, true);
+        document.removeEventListener('mousedown', this.onMouseDown);
+        document.removeEventListener('keydown', this.onKeyDown);
+        UIEventBus.remove('freeCamToggle', this.onFreeCamToggle);
+        UIEventBus.remove('loadingScreenDone', this.onLoadingScreenDone);
+        this.off('enterMonitor');
+        this.off('leftMonitor');
+        this.stopTweens();
+        if (this.orbitControls) this.orbitControls.dispose();
     }
 
     setPostLoadTransition() {
-        UIEventBus.on('loadingScreenDone', () => {
+        this.onLoadingScreenDone = () => {
             this.transition(CameraKey.IDLE, 2500, TWEEN.Easing.Exponential.Out);
-        });
+        };
+        UIEventBus.on('loadingScreenDone', this.onLoadingScreenDone);
     }
 
     resize() {
@@ -193,15 +273,17 @@ export default class Camera extends EventEmitter {
     }
 
     createControls() {
-        this.renderer = this.application.renderer;
+        const renderer = this.application.renderer;
+        this.renderer = renderer;
         this.orbitControls = new OrbitControls(
             this.instance,
-            this.renderer.instance.domElement
+            renderer.instance.domElement
         );
 
         const { x, y, z } = this.keyframes.orbitControlsStart.focalPoint;
         this.orbitControls.target.set(x, y, z);
 
+        this.orbitControls.enabled = false;
         this.orbitControls.enablePan = false;
         this.orbitControls.enableDamping = true;
         this.orbitControls.object.position.copy(

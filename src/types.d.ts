@@ -12,6 +12,8 @@ type TextureResource = {
     name: string;
     type: 'texture';
     path: string;
+    /** Smaller variant used on small screens */
+    pathSmall?: string;
 };
 
 type CubeTextureResource = {
@@ -57,4 +59,24 @@ type LoadedCubeTexture = THREE.CubeTexture;
 
 type LoadedAudio = AudioBuffer;
 
-type ResourceType = 'texture' | 'cubeTexture' | 'gltfModel';
+type ResourceType = 'texture' | 'cubeTexture' | 'gltfModel' | 'audio';
+
+declare module '*.glsl' {
+    const source: string;
+    export default source;
+}
+
+/** Fields the app attaches to DOM events forwarded from the monitor iframe */
+interface MonitorEventFields {
+    inComputer?: boolean;
+    key?: string;
+    clientX?: number;
+    clientY?: number;
+}
+
+type MonitorMessageType =
+    | 'mousemove'
+    | 'mousedown'
+    | 'mouseup'
+    | 'keydown'
+    | 'keyup';

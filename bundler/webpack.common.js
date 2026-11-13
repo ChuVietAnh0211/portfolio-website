@@ -13,7 +13,24 @@ module.exports = {
     devtool: 'source-map',
     plugins: [
         new CopyWebpackPlugin({
-            patterns: [{ from: path.resolve(__dirname, '../static') }],
+            patterns: [
+                {
+                    from: path.resolve(__dirname, '../static'),
+                    globOptions: {
+                        // Not referenced from src; do not ship them.
+                        ignore: [
+                            '**/textures/monitor/video/**',
+                            '**/textures/monitor/layers/png/**',
+                            '**/draco/**',
+                            '**/models/Decor/baked_decor.jpg',
+                            '**/textures/environmentMap/**',
+                            '**/audio/computer/**',
+                            '**/audio/radio/**',
+                            '**/audio/atmosphere/office.ogg',
+                        ],
+                    },
+                },
+            ],
         }),
         new HtmlWebpackPlugin({
             template: path.resolve(__dirname, '../src/index.html'),

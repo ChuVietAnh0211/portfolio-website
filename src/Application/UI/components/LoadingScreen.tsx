@@ -19,6 +19,7 @@ const LoadingScreen: React.FC<LoadingProps> = () => {
     const [webGLError, setWebGLError] = useState(false);
     const [counter, setCounter] = useState(0);
     const [resources] = useState<string[]>([]);
+    const [loadFailed, setLoadFailed] = useState(false);
     const [mobileWarning, setMobileWarning] = useState(window.innerWidth < 768);
 
     const onResize = () => {
@@ -29,7 +30,10 @@ const LoadingScreen: React.FC<LoadingProps> = () => {
         }
     };
 
-    window.addEventListener('resize', onResize);
+    useEffect(() => {
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
     useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -47,6 +51,9 @@ const LoadingScreen: React.FC<LoadingProps> = () => {
             setProgress(data.progress);
             setToLoad(data.toLoad);
             setLoaded(data.loaded);
+            if (String(data.sourceName).endsWith(' FAILED')) {
+                setLoadFailed(true);
+            }
             resources.push(
                 `Loaded ${data.sourceName}${getSpace(
                     data.sourceName
@@ -228,6 +235,23 @@ const LoadingScreen: React.FC<LoadingProps> = () => {
                     <div style={styles.spacer} />
                     <div style={styles.spacer} /> */}
                     <p>Henry Heffernan Portfolio Showcase 2022</p>
+                    {loadFailed && (
+                        <>
+                            <br />
+                            <p style={styles.warning}>
+                                Some assets failed to load.
+                            </p>
+                            <div style={{ marginTop: 8 }}>
+                                <div
+                                    className="bios-start-button"
+                                    onClick={() => window.location.reload()}
+                                >
+                                    <p>RELOAD</p>
+                                </div>
+                            </div>
+                            <br />
+                        </>
+                    )}
                     {mobileWarning && (
                         <>
                             <br />

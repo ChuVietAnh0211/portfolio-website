@@ -18,53 +18,61 @@ export class ComputerAudio extends AudioSource {
     constructor(manager: AudioManager) {
         super(manager);
 
-        document.addEventListener('mousedown', (event) => {
-            // @ts-ignore
-            if (event.inComputer) {
-                this.manager.playAudio('mouseDown', {
-                    volume: 0.8,
-                    position: new THREE.Vector3(800, -300, 1200),
-                });
-            }
-        });
+        document.addEventListener(
+            'mousedown',
+            (event: MouseEvent & MonitorEventFields) => {
+                if (event.inComputer) {
+                    this.manager.playAudio('mouseDown', {
+                        volume: 0.8,
+                        position: new THREE.Vector3(800, -300, 1200),
+                    });
+                }
+            },
+        );
 
-        document.addEventListener('mouseup', (event) => {
-            // @ts-ignore
-            if (event.inComputer) {
-                this.manager.playAudio('mouseUp', {
-                    volume: 0.8,
-                    position: new THREE.Vector3(800, -300, 1200),
-                });
-            }
-        });
+        document.addEventListener(
+            'mouseup',
+            (event: MouseEvent & MonitorEventFields) => {
+                if (event.inComputer) {
+                    this.manager.playAudio('mouseUp', {
+                        volume: 0.8,
+                        position: new THREE.Vector3(800, -300, 1200),
+                    });
+                }
+            },
+        );
 
-        document.addEventListener('keyup', (event) => {
-            // @ts-ignore
-            if (event.inComputer) {
-                this.lastKey = '';
-            }
-        });
+        document.addEventListener(
+            'keyup',
+            (event: KeyboardEvent & MonitorEventFields) => {
+                if (event.inComputer) {
+                    this.lastKey = '';
+                }
+            },
+        );
 
-        document.addEventListener('keydown', (event) => {
-            if (event.key.includes('_AUTO_')) {
-                this.manager.playAudio('ccType', {
-                    volume: 0.1,
-                    randDetuneScale: 0,
-                    pitch: 20,
-                });
-                return;
-            }
-            if (this.lastKey === event.key) return;
-            this.lastKey = event.key;
+        document.addEventListener(
+            'keydown',
+            (event: KeyboardEvent & MonitorEventFields) => {
+                if (event.key.includes('_AUTO_')) {
+                    this.manager.playAudio('ccType', {
+                        volume: 0.1,
+                        randDetuneScale: 0,
+                        pitch: 20,
+                    });
+                    return;
+                }
+                if (this.lastKey === event.key) return;
+                this.lastKey = event.key;
 
-            // @ts-ignore
-            if (event.inComputer) {
-                this.manager.playAudio('keyboardKeydown', {
-                    volume: 0.8,
-                    position: new THREE.Vector3(-300, -400, 1200),
-                });
-            }
-        });
+                if (event.inComputer) {
+                    this.manager.playAudio('keyboardKeydown', {
+                        volume: 0.8,
+                        position: new THREE.Vector3(-300, -400, 1200),
+                    });
+                }
+            },
+        );
     }
 }
 
@@ -95,7 +103,7 @@ export class AmbienceAudio extends AudioSource {
         input_start: number,
         input_end: number,
         output_start: number,
-        output_end: number
+        output_end: number,
     ) {
         return (
             output_start +

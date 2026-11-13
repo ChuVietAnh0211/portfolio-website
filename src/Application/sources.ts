@@ -8,6 +8,7 @@ const sources: Resource[] = [
         name: 'computerSetupTexture',
         type: 'texture',
         path: 'models/Computer/baked_computer.jpg',
+        pathSmall: 'models/Computer/baked_computer_2k.jpg',
     },
     {
         name: 'environmentModel',
@@ -18,6 +19,7 @@ const sources: Resource[] = [
         name: 'environmentTexture',
         type: 'texture',
         path: 'models/World/baked_environment.jpg',
+        pathSmall: 'models/World/baked_environment_2k.jpg',
     },
     {
         name: 'decorModel',
@@ -28,6 +30,7 @@ const sources: Resource[] = [
         name: 'decorTexture',
         type: 'texture',
         path: 'models/Decor/baked_decor_modified.jpg',
+        pathSmall: 'models/Decor/baked_decor_modified_2k.jpg',
     },
     {
         name: 'monitorSmudgeTexture',

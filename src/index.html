@@ -39,7 +39,7 @@
 
     #monitor-videos {
       pointer-events: none;
-      position: 'absolute';
+      position: absolute;
       opacity: 0;
       width: 0;
       height: 0;
@@ -123,11 +123,32 @@
   <div id="ui-interactive"></div>
   <div id="ui"></div>
   <div id="monitor-videos">
-    <video id="video-1" muted loop autoplay width="0" height="0" src="../static/textures/monitor/video/base-static.mp4"
+    <video id="video-1" muted loop playsinline preload="none" width="0" height="0" src="../static/textures/monitor/video/base-static.mp4"
       style="opacity: 0;"></video>
-    <video id="video-2" muted loop autoplay width="0" height="0"
+    <video id="video-2" muted loop playsinline preload="none" width="0" height="0"
       src="../static/textures/monitor/video/static-texture-layer.mp4" style="opacity: 0;"></video>
   </div>
+  <script>
+    // Start the monitor videos only once the critical baked textures are no
+    // longer competing for bandwidth: first pointerdown, or idle after load.
+    (function () {
+      var started = false;
+      function start() {
+        if (started) return;
+        started = true;
+        document.removeEventListener('pointerdown', start);
+        ['video-1', 'video-2'].forEach(function (id) {
+          var v = document.getElementById(id);
+          if (v && v.play) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+        });
+      }
+      document.addEventListener('pointerdown', start, { once: true });
+      window.addEventListener('load', function () {
+        if (window.requestIdleCallback) window.requestIdleCallback(start, { timeout: 4000 });
+        else setTimeout(start, 2000);
+      });
+    })();
+  </script>
 </body>
 
 </html>
